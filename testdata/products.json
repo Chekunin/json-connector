@@ -1,0 +1,12 @@
+[
+  {
+    "product_id": 1,
+    "title": "abc",
+    "price": 60
+  },
+  {
+    "product_id": 2,
+    "title": "qwerty",
+    "price": 100
+  }
+]

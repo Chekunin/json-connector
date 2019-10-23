@@ -1,0 +1,12 @@
+[
+  {
+    "client_id": 1,
+    "name": "qwe",
+    "email": "qwe@mail.ru"
+  },
+  {
+    "client_id": 2,
+    "name": "www",
+    "email": "www@mail.ru"
+  }
+]
