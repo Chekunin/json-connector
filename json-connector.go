@@ -140,31 +140,18 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 			dep.fieldName,
 			elemValue.Type().String()))
 	}
+
 	fieldType := fieldValue.Type()
 	newFieldObjPtr := reflect.New(fieldType)
 	switch elemValue.FieldByName(dep.localFKFieldName).Kind() {
 	case reflect.Int:
 		fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
-		data2, err := ioutil.ReadFile(dep.pathToFile)
-		if err != nil {
+		if err := NewJsonConnector(newFieldObjPtr.Interface(), dep.pathToFile).Where(dep.remotePKFieldName, "=", fkValInt).Unmarshal(); err != nil {
 			return err
 		}
-		jsonTagVal, ok := getTagValueInFieldWithName(
-			elemValue.FieldByName(dep.fieldName).Interface(),
-			dep.remotePKFieldName,
-			"json")
-		if !ok {
-			jsonTagVal = dep.remotePKFieldName
-		}
-		filterStr2 := fmt.Sprintf("#(%s=%d)", jsonTagVal, fkValInt)
-		res2 := gjson.GetBytes(data2, filterStr2)
-		err = json.Unmarshal(data2[res2.Index:res2.Index+len(res2.Raw)], newFieldObjPtr.Interface())
-		if err != nil {
-			return err
-		}
-
-		elemValue.FieldByName(dep.fieldName).Set(reflect.Indirect(newFieldObjPtr))
 	}
+	elemValue.FieldByName(dep.fieldName).Set(reflect.Indirect(newFieldObjPtr))
+
 	return nil
 }
 
@@ -176,7 +163,12 @@ func (jc *JsonConnector) getFilterStr() string {
 				filterStr += "#."
 			}
 			filterStr += "#("
-			filterStr += fmt.Sprintf("%s%s", v.fieldName, v.operation)
+			fieldNameInJson, ok := getTagValueInFieldWithName(jc.model, v.fieldName, "json")
+			if !ok {
+				fieldNameInJson = v.fieldName
+			}
+			fieldNameInJson = strings.Split(fieldNameInJson, ",")[0]
+			filterStr += fmt.Sprintf("%s%s", fieldNameInJson, v.operation)
 			switch v.value.(type) {
 			case string:
 				filterStr += fmt.Sprintf("\"%s\"", v.value)
@@ -210,10 +202,4 @@ func getTagValueInFieldWithName(model interface{}, fieldName string, tagName str
 	} else {
 		return "", false
 	}
-}
-
-func getFieldValueWithName(model interface{}, fieldName string) interface{} {
-	r := reflect.ValueOf(model)
-	f := reflect.Indirect(r).FieldByName(fieldName)
-	return f.Interface()
 }

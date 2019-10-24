@@ -12,9 +12,10 @@ type Product struct {
 }
 
 type Client struct {
-	ID    int    `json:"client_id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	ID     int      `json:"client_id"`
+	Name   string   `json:"name"`
+	Email  string   `json:"email"`
+	Orders []*Order `json:"orders" jc:"ID,ClientID"`
 }
 
 type Order struct {
@@ -28,21 +29,28 @@ type Order struct {
 func TestDefault(t *testing.T) {
 	var order *Order
 	if err := NewJsonConnector(&order, "./testdata/orders.json").
-		Where("order_id", "=", 1).
+		Where("ID", "=", 1).
 		AddDependency("Client", "./testdata/clients.json").
 		AddDependency("Product", "./testdata/products.json").
 		Unmarshal(); err != nil {
 		panic(err)
 	}
-	fmt.Println("result:")
-	fmt.Println(order)
-	//for _, v := range order {
-	//	//fmt.Printf("%+v", *v)
-	//	fmt.Println("ID:", v.ID)
-	//	fmt.Println("ClientID:", v.ClientID)
-	//	fmt.Println("ProductID:", v.ProductID)
-	//	fmt.Println("Product:", v.Product)
-	//	fmt.Println("Client:", v.Client)
-	//	fmt.Println("-----")
-	//}
+	fmt.Println("order result:")
+	fmt.Printf("%+v\n", order)
+	fmt.Printf("%+v\n%+v\n", order.Product, order.Client)
+
+	fmt.Println("--------")
+
+	var client *Client
+	if err := NewJsonConnector(&client, "./testdata/clients.json").
+		Where("client_id", "=", 2).
+		AddDependency("Orders", "./testdata/orders.json").
+		Unmarshal(); err != nil {
+		panic(err)
+	}
+	fmt.Println("client result:")
+	fmt.Printf("%+v\n", client)
+	for _, v := range client.Orders {
+		fmt.Printf("%+v\n", v)
+	}
 }
