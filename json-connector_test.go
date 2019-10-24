@@ -27,10 +27,10 @@ type Order struct {
 
 func TestDefault(t *testing.T) {
 	var order *Order
-	if err := NewJsonConnector(&order, "/Users/chekuninalexey/go/src/json-connector/testdata/orders.json").
+	if err := NewJsonConnector(&order, "./testdata/orders.json").
 		Where("order_id", "=", 1).
-		AddDependency("Client", "/Users/chekuninalexey/go/src/json-connector/testdata/clients.json").
-		AddDependency("Product", "/Users/chekuninalexey/go/src/json-connector/testdata/products.json").
+		AddDependency("Client", "./testdata/clients.json").
+		AddDependency("Product", "./testdata/products.json").
 		Unmarshal(); err != nil {
 		panic(err)
 	}
