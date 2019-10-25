@@ -43,16 +43,18 @@ func (jc *JsonConnector) AddDependency(fieldName string, pathToFile string) *Jso
 		fieldName:  fieldName,
 		pathToFile: pathToFile,
 	}
-	if tag, ok := getTagValueInFieldWithName(jc.model, fieldName, "jc"); ok {
-		if len(strings.Split(tag, ",")) < 2 {
-			panic(errors.New("need two fieldnames in tag jc of field " + fieldName))
+	if !strings.Contains(fieldName, ".") {
+		if tag, ok := getTagValueInFieldWithName(jc.model, fieldName, "jc"); ok {
+			if len(strings.Split(tag, ",")) < 2 {
+				panic(errors.New("need two fieldnames in tag jc of field " + fieldName))
+			}
+			val1 := strings.Split(tag, ",")[0]
+			val2 := strings.Split(tag, ",")[1]
+			dep.localFKFieldName = val1
+			dep.remotePKFieldName = val2
+		} else {
+			panic(fmt.Sprintf("tag jc in field %s doesn't filled", fieldName))
 		}
-		val1 := strings.Split(tag, ",")[0]
-		val2 := strings.Split(tag, ",")[1]
-		dep.localFKFieldName = val1
-		dep.remotePKFieldName = val2
-	} else {
-		panic(fmt.Sprintf("tag jc in field %s doesn't filled", fieldName))
 	}
 	jc.dependencies[fieldName] = dep
 	return jc
@@ -80,6 +82,9 @@ func (jc *JsonConnector) Unmarshal() error {
 	filterStr := jc.getFilterStr()
 	if filterStr != "" {
 		resultData := gjson.GetBytes(data, filterStr)
+		if len(resultData.Raw) == 0 {
+			return nil
+		}
 		err := json.Unmarshal([]byte(resultData.String()), &jc.model)
 		if err != nil {
 			return err
@@ -101,11 +106,9 @@ func (jc *JsonConnector) Unmarshal() error {
 		modelValue := reflect.Indirect(reflect.ValueOf(jc.model))
 		for i := 0; i < modelValue.Len(); i++ {
 			elemValue := reflect.Indirect(modelValue.Index(i))
-			for _, v := range jc.dependencies {
-				err := jc.fillDependencyField(elemValue, v)
-				if err != nil {
-					return err
-				}
+			err := jc.fillDependencyFields(elemValue, jc.dependencies)
+			if err != nil {
+				return err
 			}
 		}
 	case reflect.Struct:
@@ -127,6 +130,9 @@ func (jc *JsonConnector) Unmarshal() error {
 
 func (jc *JsonConnector) fillDependencyFields(elemValue reflect.Value, deps map[string]dependency) error {
 	for _, v := range deps {
+		if strings.Contains(v.fieldName, ".") {
+			continue
+		}
 		if err := jc.fillDependencyField(elemValue, v); err != nil {
 			return err
 		}
@@ -146,7 +152,15 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 	switch elemValue.FieldByName(dep.localFKFieldName).Kind() {
 	case reflect.Int:
 		fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
-		if err := NewJsonConnector(newFieldObjPtr.Interface(), dep.pathToFile).Where(dep.remotePKFieldName, "=", fkValInt).Unmarshal(); err != nil {
+		tempJc := NewJsonConnector(newFieldObjPtr.Interface(), dep.pathToFile)
+		tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
+		for _, v1 := range jc.dependencies {
+			v1Arr := strings.Split(v1.fieldName, ".")
+			if len(v1Arr) > 1 && v1Arr[0] == dep.fieldName {
+				tempJc = tempJc.AddDependency(strings.Join(v1Arr[1:], "."), v1.pathToFile)
+			}
+		}
+		if err := tempJc.Unmarshal(); err != nil {
 			return err
 		}
 	}

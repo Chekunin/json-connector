@@ -45,6 +45,7 @@ func TestDefault(t *testing.T) {
 	if err := NewJsonConnector(&client, "./testdata/clients.json").
 		Where("client_id", "=", 2).
 		AddDependency("Orders", "./testdata/orders.json").
+		AddDependency("Orders.Product", "./testdata/products.json").
 		Unmarshal(); err != nil {
 		panic(err)
 	}
@@ -52,5 +53,6 @@ func TestDefault(t *testing.T) {
 	fmt.Printf("%+v\n", client)
 	for _, v := range client.Orders {
 		fmt.Printf("%+v\n", v)
+		fmt.Printf("\t%+v\n", v.Product)
 	}
 }
