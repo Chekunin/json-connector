@@ -149,20 +149,32 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 
 	fieldType := fieldValue.Type()
 	newFieldObjPtr := reflect.New(fieldType)
+	tempJc := NewJsonConnector(newFieldObjPtr.Interface(), dep.pathToFile)
 	switch elemValue.FieldByName(dep.localFKFieldName).Kind() {
 	case reflect.Int:
 		fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
-		tempJc := NewJsonConnector(newFieldObjPtr.Interface(), dep.pathToFile)
 		tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
-		for _, v1 := range jc.dependencies {
-			v1Arr := strings.Split(v1.fieldName, ".")
-			if len(v1Arr) > 1 && v1Arr[0] == dep.fieldName {
-				tempJc = tempJc.AddDependency(strings.Join(v1Arr[1:], "."), v1.pathToFile)
-			}
+	case reflect.String:
+		skValStr := elemValue.FieldByName(dep.localFKFieldName).Interface().(string)
+		tempJc = tempJc.Where(dep.remotePKFieldName, "=", fmt.Sprintf("\"%s\"", skValStr))
+	case reflect.Float64:
+		skValFlt64 := elemValue.FieldByName(dep.localFKFieldName).Interface().(float64)
+		tempJc = tempJc.Where(dep.remotePKFieldName, "=", skValFlt64)
+	case reflect.Float32:
+		skValFlt32 := elemValue.FieldByName(dep.localFKFieldName).Interface().(float32)
+		tempJc = tempJc.Where(dep.remotePKFieldName, "=", skValFlt32)
+	case reflect.Uint:
+		skValUint := elemValue.FieldByName(dep.localFKFieldName).Interface().(uint)
+		tempJc = tempJc.Where(dep.remotePKFieldName, "=", skValUint)
+	}
+	for _, v1 := range jc.dependencies {
+		v1Arr := strings.Split(v1.fieldName, ".")
+		if len(v1Arr) > 1 && v1Arr[0] == dep.fieldName {
+			tempJc = tempJc.AddDependency(strings.Join(v1Arr[1:], "."), v1.pathToFile)
 		}
-		if err := tempJc.Unmarshal(); err != nil {
-			return err
-		}
+	}
+	if err := tempJc.Unmarshal(); err != nil {
+		return err
 	}
 	elemValue.FieldByName(dep.fieldName).Set(reflect.Indirect(newFieldObjPtr))
 
