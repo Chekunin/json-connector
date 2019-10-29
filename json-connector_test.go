@@ -2,6 +2,7 @@ package json_connector
 
 import (
 	"fmt"
+	"io/ioutil"
 	"testing"
 )
 
@@ -27,11 +28,24 @@ type Order struct {
 }
 
 func TestDefault(t *testing.T) {
+	dataOrders, err := ioutil.ReadFile("./testdata/orders.json")
+	if err != nil {
+		panic(err)
+	}
+	dataClients, err := ioutil.ReadFile("./testdata/clients.json")
+	if err != nil {
+		panic(err)
+	}
+	dataProducts, err := ioutil.ReadFile("./testdata/products.json")
+	if err != nil {
+		panic(err)
+	}
+
 	var order *Order
-	if err := NewJsonConnector(&order, "./testdata/orders.json").
+	if err := NewJsonConnector(&order, dataOrders).
 		Where("ID", "=", 1).
-		AddDependency("Client", "./testdata/clients.json").
-		AddDependency("Product", "./testdata/products.json").
+		AddDependency("Client", dataClients).
+		AddDependency("Product", dataProducts).
 		Unmarshal(); err != nil {
 		panic(err)
 	}
@@ -42,10 +56,10 @@ func TestDefault(t *testing.T) {
 	fmt.Println("--------")
 
 	var client *Client
-	if err := NewJsonConnector(&client, "./testdata/clients.json").
+	if err := NewJsonConnector(&client, dataClients).
 		Where("client_id", "=", 2).
-		AddDependency("Orders", "./testdata/orders.json").
-		AddDependency("Orders.Product", "./testdata/products.json").
+		AddDependency("Orders", dataOrders).
+		AddDependency("Orders.Product", dataProducts).
 		Unmarshal(); err != nil {
 		panic(err)
 	}

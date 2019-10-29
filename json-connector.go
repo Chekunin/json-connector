@@ -5,13 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tidwall/gjson"
-	"io/ioutil"
 	"reflect"
 	"strings"
 )
 
 type JsonConnector struct {
-	path         string
+	data         []byte
 	model        interface{}
 	dependencies map[string]dependency
 	filters      []filter
@@ -27,21 +26,21 @@ type dependency struct {
 	fieldName         string
 	localFKFieldName  string
 	remotePKFieldName string
-	pathToFile        string
+	data              []byte
 }
 
-func NewJsonConnector(model interface{}, pathToFile string) *JsonConnector {
+func NewJsonConnector(model interface{}, data []byte) *JsonConnector {
 	return &JsonConnector{
-		path:         pathToFile,
+		data:         data,
 		model:        model,
 		dependencies: make(map[string]dependency),
 	}
 }
 
-func (jc *JsonConnector) AddDependency(fieldName string, pathToFile string) *JsonConnector {
+func (jc *JsonConnector) AddDependency(fieldName string, data []byte) *JsonConnector {
 	dep := dependency{
-		fieldName:  fieldName,
-		pathToFile: pathToFile,
+		fieldName: fieldName,
+		data:      data,
 	}
 	if !strings.Contains(fieldName, ".") {
 		if tag, ok := getTagValueInFieldWithName(jc.model, fieldName, "jc"); ok {
@@ -70,18 +69,13 @@ func (jc *JsonConnector) Where(fieldName string, operation string, value interfa
 }
 
 func (jc *JsonConnector) Unmarshal() error {
-	data, err := ioutil.ReadFile(jc.path)
-	if err != nil {
-		return err
-	}
-
 	if len(jc.filters) > 1 {
 		return errors.New("max number of where-conditions is one")
 	}
 
 	filterStr := jc.getFilterStr()
 	if filterStr != "" {
-		resultData := gjson.GetBytes(data, filterStr)
+		resultData := gjson.GetBytes(jc.data, filterStr)
 		if len(resultData.Raw) == 0 {
 			return nil
 		}
@@ -90,7 +84,7 @@ func (jc *JsonConnector) Unmarshal() error {
 			return err
 		}
 	} else {
-		err := json.Unmarshal(data, &jc.model)
+		err := json.Unmarshal(jc.data, &jc.model)
 		if err != nil {
 			return err
 		}
@@ -149,7 +143,7 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 
 	fieldType := fieldValue.Type()
 	newFieldObjPtr := reflect.New(fieldType)
-	tempJc := NewJsonConnector(newFieldObjPtr.Interface(), dep.pathToFile)
+	tempJc := NewJsonConnector(newFieldObjPtr.Interface(), dep.data)
 	switch elemValue.FieldByName(dep.localFKFieldName).Kind() {
 	case reflect.Int:
 		fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
@@ -170,7 +164,7 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 	for _, v1 := range jc.dependencies {
 		v1Arr := strings.Split(v1.fieldName, ".")
 		if len(v1Arr) > 1 && v1Arr[0] == dep.fieldName {
-			tempJc = tempJc.AddDependency(strings.Join(v1Arr[1:], "."), v1.pathToFile)
+			tempJc = tempJc.AddDependency(strings.Join(v1Arr[1:], "."), v1.data)
 		}
 	}
 	if err := tempJc.Unmarshal(); err != nil {
