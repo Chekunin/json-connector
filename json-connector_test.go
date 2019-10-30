@@ -6,10 +6,23 @@ import (
 	"testing"
 )
 
+// todo: резализовать возможность связи многие-ко-многим
 type Product struct {
-	ID    int    `json:"product_id"`
-	Title string `json:"title"`
-	Price int    `json:"price"`
+	ID         int         `json:"product_id"`
+	Title      string      `json:"title"`
+	Price      int         `json:"price"`
+	Categories []*Category `json:"categories" jc:"m2m:ID,product_id,ID,category_id"`
+	// локальное название поля pk, название поля в таблице many2many, локальное название pk поля зависимости (Category), название этог поля в т. many2many
+}
+
+type Category struct {
+	ID   int    `json:"category_id"`
+	Name string `json:"name"`
+}
+
+type ProductsCategories struct {
+	ProductID  int `json:"product_id"`
+	CategoryID int `json:"category_id"`
 }
 
 type Client struct {
@@ -37,6 +50,14 @@ func TestDefault(t *testing.T) {
 		panic(err)
 	}
 	dataProducts, err := ioutil.ReadFile("./testdata/products.json")
+	if err != nil {
+		panic(err)
+	}
+	dataCategories, err := ioutil.ReadFile("./testdata/categories.json")
+	if err != nil {
+		panic(err)
+	}
+	dataProductsCategories, err := ioutil.ReadFile("./testdata/productsCategories.json")
 	if err != nil {
 		panic(err)
 	}
@@ -68,5 +89,15 @@ func TestDefault(t *testing.T) {
 	for _, v := range client.Orders {
 		fmt.Printf("%+v\n", v)
 		fmt.Printf("\t%+v\n", v.Product)
+	}
+
+	fmt.Println("--------")
+
+	var product *Product
+	if err := NewJsonConnector(&product, dataProducts).
+		Where("product_id", "=", 1).
+		AddManyToManyDependency("Categories", dataProductsCategories, dataCategories).
+		Unmarshal(); err != nil {
+		panic(err)
 	}
 }

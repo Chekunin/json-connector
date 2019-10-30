@@ -21,12 +21,22 @@ type filter struct {
 	operation string
 	value     interface{}
 }
+type dependencyType int
+
+const (
+	OneToMany dependencyType = iota
+	ManyToMany
+)
 
 type dependency struct {
-	fieldName         string
-	localFKFieldName  string
-	remotePKFieldName string
-	data              []byte
+	depType                 dependencyType
+	fieldName               string
+	localFKFieldName        string
+	remotePKFieldName       string
+	data                    []byte
+	manyToManyData          []byte
+	localFKFieldNameInJson  string
+	remotePKFieldNameInJson string
 }
 
 func NewJsonConnector(model interface{}, data []byte) *JsonConnector {
@@ -39,20 +49,53 @@ func NewJsonConnector(model interface{}, data []byte) *JsonConnector {
 
 func (jc *JsonConnector) AddDependency(fieldName string, data []byte) *JsonConnector {
 	dep := dependency{
+		depType:   OneToMany,
 		fieldName: fieldName,
 		data:      data,
 	}
 	if !strings.Contains(fieldName, ".") {
 		if tag, ok := getTagValueInFieldWithName(jc.model, fieldName, "jc"); ok {
 			if len(strings.Split(tag, ",")) < 2 {
-				panic(errors.New("need two fieldnames in tag jc of field " + fieldName))
+				panic(errors.New("need two field-names in tag jc of field " + fieldName))
 			}
 			val1 := strings.Split(tag, ",")[0]
 			val2 := strings.Split(tag, ",")[1]
 			dep.localFKFieldName = val1
 			dep.remotePKFieldName = val2
 		} else {
-			panic(fmt.Sprintf("tag jc in field %s doesn't filled", fieldName))
+			panic(fmt.Sprintf("tag \"jc\" in field %s doesn't filled", fieldName))
+		}
+	}
+	jc.dependencies[fieldName] = dep
+	return jc
+}
+
+func (jc *JsonConnector) AddManyToManyDependency(fieldName string, manyToManyData []byte, data []byte) *JsonConnector {
+	dep := dependency{
+		depType:        ManyToMany,
+		fieldName:      fieldName,
+		data:           data,
+		manyToManyData: manyToManyData,
+	}
+	if !strings.Contains(fieldName, ".") {
+		if tag, ok := getTagValueInFieldWithName(jc.model, fieldName, "jc"); ok {
+			if tag[:len("m2m:")] != "m2m:" {
+				panic(errors.New("tag must begin with \"m2m:\" in field " + fieldName + " with many-to-many relation"))
+			}
+			tag = tag[len("m2m:")-1:]
+			if len(strings.Split(tag, ",")) < 4 {
+				panic(errors.New("need four field-names in tag jc of field " + fieldName))
+			}
+			val1Struct := strings.Split(tag, ",")[0]
+			val1Json := strings.Split(tag, ",")[0]
+			val2Struct := strings.Split(tag, ",")[1]
+			val2Json := strings.Split(tag, ",")[1]
+			dep.localFKFieldName = val1Struct
+			dep.localFKFieldNameInJson = val1Json
+			dep.remotePKFieldName = val2Struct
+			dep.remotePKFieldNameInJson = val2Json
+		} else {
+			panic(fmt.Sprintf("tag \"jc\" in field %s doesn't filled", fieldName))
 		}
 	}
 	jc.dependencies[fieldName] = dep
@@ -69,6 +112,7 @@ func (jc *JsonConnector) Where(fieldName string, operation string, value interfa
 }
 
 func (jc *JsonConnector) Unmarshal() error {
+	// todo: fix here, need more conditions
 	if len(jc.filters) > 1 {
 		return errors.New("max number of where-conditions is one")
 	}
@@ -146,8 +190,17 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 	tempJc := NewJsonConnector(newFieldObjPtr.Interface(), dep.data)
 	switch elemValue.FieldByName(dep.localFKFieldName).Kind() {
 	case reflect.Int:
-		fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
-		tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
+		switch dep.depType {
+		case OneToMany:
+			fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
+			tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
+		case ManyToMany:
+			localValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
+			obj := gjson.GetBytes(dep.manyToManyData, fmt.Sprint("#(%s=%d)", dep.localFKFieldNameInJson, localValInt))
+			remoteValInt := elemValue.FieldByName(dep.remotePKFieldName).Interface().(int)
+			obj = gjson.GetBytes([]byte(obj.String()), fmt.Sprintf("#(%s=%d)", dep.remotePKFieldNameInJson, remoteValInt))
+			tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
+		}
 	case reflect.String:
 		skValStr := elemValue.FieldByName(dep.localFKFieldName).Interface().(string)
 		tempJc = tempJc.Where(dep.remotePKFieldName, "=", fmt.Sprintf("\"%s\"", skValStr))
