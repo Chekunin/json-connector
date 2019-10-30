@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// todo: резализовать возможность связи многие-ко-многим
 type Product struct {
 	ID         int         `json:"product_id"`
 	Title      string      `json:"title"`
@@ -51,6 +50,7 @@ func TestDefault(t *testing.T) {
 	}
 	dataProducts, err := ioutil.ReadFile("./testdata/products.json")
 	if err != nil {
+		panic(err)
 		panic(err)
 	}
 	dataCategories, err := ioutil.ReadFile("./testdata/categories.json")
@@ -99,5 +99,9 @@ func TestDefault(t *testing.T) {
 		AddManyToManyDependency("Categories", dataProductsCategories, dataCategories).
 		Unmarshal(); err != nil {
 		panic(err)
+	}
+	fmt.Printf("%+v\n", product)
+	for _, v := range product.Categories {
+		fmt.Printf("\t%+v\n", v)
 	}
 }

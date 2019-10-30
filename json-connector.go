@@ -82,14 +82,14 @@ func (jc *JsonConnector) AddManyToManyDependency(fieldName string, manyToManyDat
 			if tag[:len("m2m:")] != "m2m:" {
 				panic(errors.New("tag must begin with \"m2m:\" in field " + fieldName + " with many-to-many relation"))
 			}
-			tag = tag[len("m2m:")-1:]
+			tag = tag[len("m2m:"):]
 			if len(strings.Split(tag, ",")) < 4 {
 				panic(errors.New("need four field-names in tag jc of field " + fieldName))
 			}
 			val1Struct := strings.Split(tag, ",")[0]
-			val1Json := strings.Split(tag, ",")[0]
-			val2Struct := strings.Split(tag, ",")[1]
-			val2Json := strings.Split(tag, ",")[1]
+			val1Json := strings.Split(tag, ",")[1]
+			val2Struct := strings.Split(tag, ",")[2]
+			val2Json := strings.Split(tag, ",")[3]
 			dep.localFKFieldName = val1Struct
 			dep.localFKFieldNameInJson = val1Json
 			dep.remotePKFieldName = val2Struct
@@ -98,6 +98,7 @@ func (jc *JsonConnector) AddManyToManyDependency(fieldName string, manyToManyDat
 			panic(fmt.Sprintf("tag \"jc\" in field %s doesn't filled", fieldName))
 		}
 	}
+	fmt.Printf("\nAddManyToManyDependency:\n%+v\n-----\n", dep) // todo: delete
 	jc.dependencies[fieldName] = dep
 	return jc
 }
@@ -113,12 +114,31 @@ func (jc *JsonConnector) Where(fieldName string, operation string, value interfa
 
 func (jc *JsonConnector) Unmarshal() error {
 	// todo: fix here, need more conditions
-	if len(jc.filters) > 1 {
-		return errors.New("max number of where-conditions is one")
-	}
+	//if len(jc.filters) > 1 {
+	//	return errors.New("max number of where-conditions is one")
+	//}
 
-	filterStr := jc.getFilterStr()
-	if filterStr != "" {
+	if len(jc.filters) == 0 {
+		err := json.Unmarshal(jc.data, &jc.model)
+		if err != nil {
+			return err
+		}
+	} else {
+		filterStr := jc.getFilterStr(jc.filters[0])
+		resultData := gjson.GetBytes(jc.data, filterStr)
+		for i := 1; i < len(jc.filters); i++ {
+			filterStr = jc.getFilterStr(jc.filters[i])
+			resultData = resultData.Get(filterStr)
+		}
+		if len(resultData.Raw) == 0 {
+			return nil
+		}
+		err := json.Unmarshal([]byte(resultData.String()), &jc.model)
+		if err != nil {
+			return err
+		}
+	}
+	/*if filterStr != "" {
 		resultData := gjson.GetBytes(jc.data, filterStr)
 		if len(resultData.Raw) == 0 {
 			return nil
@@ -127,12 +147,7 @@ func (jc *JsonConnector) Unmarshal() error {
 		if err != nil {
 			return err
 		}
-	} else {
-		err := json.Unmarshal(jc.data, &jc.model)
-		if err != nil {
-			return err
-		}
-	}
+	}*/
 
 	modelType := reflect.TypeOf(jc.model)
 	if reflect.TypeOf(jc.model).Kind() != reflect.Ptr {
@@ -192,14 +207,36 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 	case reflect.Int:
 		switch dep.depType {
 		case OneToMany:
+			fmt.Println("OneToMany")
 			fkValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
 			tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
 		case ManyToMany:
+			fmt.Println("ManyToMany")
 			localValInt := elemValue.FieldByName(dep.localFKFieldName).Interface().(int)
-			obj := gjson.GetBytes(dep.manyToManyData, fmt.Sprint("#(%s=%d)", dep.localFKFieldNameInJson, localValInt))
-			remoteValInt := elemValue.FieldByName(dep.remotePKFieldName).Interface().(int)
-			obj = gjson.GetBytes([]byte(obj.String()), fmt.Sprintf("#(%s=%d)", dep.remotePKFieldNameInJson, remoteValInt))
-			tempJc = tempJc.Where(dep.remotePKFieldName, "=", fkValInt)
+			fmt.Println("qqq: localValInt", localValInt)
+			tempJc = tempJc.Where(dep.localFKFieldName, "=", localValInt)
+			obj := gjson.GetBytes(dep.manyToManyData, fmt.Sprintf("#(%s=%d)#", dep.localFKFieldNameInJson, localValInt))
+			obj = obj.Get(fmt.Sprintf("#.%s", dep.remotePKFieldNameInJson)) // "[1,2]"
+			fmt.Println("77777:")
+			fmt.Println(obj.String())
+			// todo: надо remoteValInt не там смотреть
+			objArr := obj.Array()
+			// здесь цикл надо делать по objArr
+			// есть список id, надо достать все объекты с ними
+			for _, v := range objArr {
+				// достаём один такой объект из json
+				q := gjson.GetBytes(dep.data, fmt.Sprintf("#(%s=%d)", dep.remotePKFieldName, int(v.Int())))
+				var qModel interface{}
+				err := json.Unmarshal([]byte(q.String()), &qModel)
+				if err != nil {
+					return err
+				}
+				// создаём объект с ним и добавляем в массив elemValue
+			}
+			remoteValInt := int(objArr[0].Int())
+			fmt.Println("qqq: remoteValInt", remoteValInt)
+			//obj = gjson.GetBytes([]byte(obj.String()), fmt.Sprintf("#(%s=%d)", dep.remotePKFieldNameInJson, remoteValInt))
+			tempJc = tempJc.Where(dep.remotePKFieldName, "=", remoteValInt)
 		}
 	case reflect.String:
 		skValStr := elemValue.FieldByName(dep.localFKFieldName).Interface().(string)
@@ -213,6 +250,9 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 	case reflect.Uint:
 		skValUint := elemValue.FieldByName(dep.localFKFieldName).Interface().(uint)
 		tempJc = tempJc.Where(dep.remotePKFieldName, "=", skValUint)
+	default:
+		fmt.Println("5555555")
+		fmt.Println(elemValue.FieldByName(dep.localFKFieldName).Kind())
 	}
 	for _, v1 := range jc.dependencies {
 		v1Arr := strings.Split(v1.fieldName, ".")
@@ -228,37 +268,31 @@ func (jc *JsonConnector) fillDependencyField(elemValue reflect.Value, dep depend
 	return nil
 }
 
-func (jc *JsonConnector) getFilterStr() string {
+func (jc *JsonConnector) getFilterStr(f filter) string {
 	var filterStr string
-	if len(jc.filters) != 0 {
-		for _, v := range jc.filters {
-			if filterStr != "" {
-				filterStr += "#."
-			}
-			filterStr += "#("
-			fieldNameInJson, ok := getTagValueInFieldWithName(jc.model, v.fieldName, "json")
-			if !ok {
-				fieldNameInJson = v.fieldName
-			}
-			fieldNameInJson = strings.Split(fieldNameInJson, ",")[0]
-			filterStr += fmt.Sprintf("%s%s", fieldNameInJson, v.operation)
-			switch v.value.(type) {
-			case string:
-				filterStr += fmt.Sprintf("\"%s\"", v.value)
-			case int:
-				filterStr += fmt.Sprintf("%d", v.value)
-			case bool:
-				filterStr += fmt.Sprintf("%t", v.value)
-			default:
-				panic(fmt.Sprintf("I don't know type %T", v.value))
-			}
-			filterStr += ")"
-		}
-		if reflect.TypeOf(jc.model).Elem().Kind() == reflect.Slice ||
-			reflect.TypeOf(jc.model).Elem().Kind() == reflect.Array {
-			filterStr += "#"
-		}
+	filterStr += "#("
+	fieldNameInJson, ok := getTagValueInFieldWithName(jc.model, f.fieldName, "json")
+	if !ok {
+		fieldNameInJson = f.fieldName
 	}
+	fieldNameInJson = strings.Split(fieldNameInJson, ",")[0]
+	filterStr += fmt.Sprintf("%s%s", fieldNameInJson, f.operation)
+	switch f.value.(type) {
+	case string:
+		filterStr += fmt.Sprintf("\"%s\"", f.value)
+	case int:
+		filterStr += fmt.Sprintf("%d", f.value)
+	case bool:
+		filterStr += fmt.Sprintf("%t", f.value)
+	default:
+		panic(fmt.Sprintf("I don't know type %T", f.value))
+	}
+
+	if reflect.TypeOf(jc.model).Elem().Kind() == reflect.Slice ||
+		reflect.TypeOf(jc.model).Elem().Kind() == reflect.Array {
+		filterStr += "#"
+	}
+	filterStr += ")"
 	return filterStr
 }
 
